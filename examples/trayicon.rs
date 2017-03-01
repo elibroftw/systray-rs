@@ -1,6 +1,6 @@
 extern crate systray;
 
-//#[cfg(target_os = "windows")]
+#[cfg(target_os = "windows")]
 fn main() {
     let mut app;
     match systray::Application::new() {
@@ -27,7 +27,15 @@ fn main() {
     app.wait_for_message();
 }
 
-// #[cfg(not(target_os = "windows"))]
-// fn main() {
-//     panic!("Not implemented on this platform!");
-// }
+#[cfg(target_os = "macos")]
+fn main() {
+    let mut app;
+    match systray::Application::new() {
+        Ok(w) => app = w,
+        Err(_) => panic!("Can't create tray icon app!")
+    }
+
+    const ICON_BUFFER: &'static [u8] = include_bytes!("rust-logo.png");
+    app.set_icon_from_buffer(ICON_BUFFER, 256, 256).unwrap();
+    app.wait_for_message();
+}

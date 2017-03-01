@@ -9,6 +9,14 @@ extern crate kernel32;
 #[cfg(target_os = "windows")]
 extern crate user32;
 #[cfg(target_os = "windows")]
+extern crate shell32;
+
+#[cfg(target_os = "macos")]
+extern crate cocoa;
+#[cfg(target_os = "macos")]
+#[macro_use]
+extern crate objc;
+
 extern crate libc;
 #[cfg(target_os = "linux")]
 extern crate gtk;
