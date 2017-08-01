@@ -171,6 +171,10 @@ impl Window {
         panic!("Not implemented on this platform!");
     }
 
+    pub fn set_icon_from_buffer(&self, _: &[u8], _: u32, _: u32) -> Result<(), SystrayError> {
+        unimplemented!()
+    }
+
     pub fn quit(&self) {
         glib::idle_add(|| {
             gtk::main_quit();
