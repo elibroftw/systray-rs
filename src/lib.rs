@@ -187,7 +187,7 @@ impl Application {
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn wait_for_message(&mut self) -> Result<(), Error> {
+    pub fn wait_for_message(&mut self) -> Result<(), Error> {
         loop {
             let msg;
             match self.rx.recv() {
