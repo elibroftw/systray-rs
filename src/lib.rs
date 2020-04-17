@@ -107,6 +107,11 @@ impl Application {
         self.window.set_icon_from_file(file)
     }
 
+    #[cfg(target_os = "linux")]
+    pub fn set_icon_from_name(&self, name: &str) -> Result<(), Error> {
+        self.window.set_icon_from_name(name)
+    }
+
     pub fn set_icon_from_resource(&self, resource: &str) -> Result<(), Error> {
         self.window.set_icon_from_resource(resource)
     }
