@@ -133,24 +133,31 @@ impl Application {
         self.window.quit()
     }
 
-    pub fn wait_for_message(&mut self) -> Result<(), Error> {
-        loop {
-            let msg;
-            match self.rx.recv() {
-                Ok(m) => msg = m,
-                Err(_) => {
-                    self.quit();
-                    break;
-                }
-            }
-            if self.callback.contains_key(&msg.menu_index) {
-                if let Some(mut f) = self.callback.remove(&msg.menu_index) {
-                    f(self)?;
-                    self.callback.insert(msg.menu_index, f);
-                }
+    pub fn get_message(&mut self) -> Result<bool, Error> {
+        let msg;
+        match self.rx.recv() {
+            Ok(m) => msg = m,
+            Err(_) => {
+                self.quit();
+                return Ok(true);
             }
         }
+        if self.callback.contains_key(&msg.menu_index) {
+            if let Some(mut f) = self.callback.remove(&msg.menu_index) {
+                f(self)?;
+                self.callback.insert(msg.menu_index, f);
+            }
+        }
+        Ok(false)
+    }
 
+    pub fn wait_for_message(&mut self) -> Result<(), Error> {
+        loop {
+            let quit = self.get_message()?;
+            if quit {
+                break;
+            }
+        }
         Ok(())
     }
 }
