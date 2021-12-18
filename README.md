@@ -1,4 +1,6 @@
-# SYSTRAY-RS IS DEPRECATED AND ARCHIVED
+# SYSTRAY-RS Reboot
+
+This is an adventure. I will try to reboot this library as it can convince more developers to develop with Rust instead of Go, C++, and Python.
 
 systray-rs is now deprecated. I had some hopes about working on this, but I really am just not finding any intersection between this project and other projects I'm maintaining, so I think it's best to call it done then having everyone hold out for my updates that will most likely never arrive.
 
