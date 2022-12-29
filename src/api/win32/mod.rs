@@ -298,14 +298,21 @@ impl Window {
 
     pub fn set_tooltip(&self, tooltip: &str) -> Result<(), Error> {
         // Add Tooltip
-        log::debug!("Setting tooltip to {}", tooltip);
-        // Gross way to convert String to [i8; 128]
-        // TODO: Clean up conversion, test for length so we don't panic at runtime
-        let tt = tooltip.as_bytes().clone();
+        log::info!("Setting tooltip to {}", tooltip);
+
         let mut nid = get_nid_struct(&self.info.hwnd);
-        for i in 0..tt.len() {
-            nid.szTip[i] = tt[i] as u16;
+        let mut tooltip: Vec<u16> = tooltip.encode_utf16().collect();
+        tooltip.push(0); // adds a null-terminator to the end
+
+        let size_tooltip = tooltip.len();
+        let size_available = std::mem::size_of_val(&nid.szTip) >> 1; //length in u16
+        if size_available < size_tooltip {
+            return unsafe { Err(get_win_os_error("Error setting tooltip")) };
         }
+
+        let sz_tip = &mut nid.szTip[..size_tooltip];
+        sz_tip.copy_from_slice(&tooltip);
+
         nid.uFlags = NIF_TIP;
         unsafe {
             if shellapi::Shell_NotifyIconW(NIM_MODIFY, &mut nid as *mut NOTIFYICONDATAW) == 0 {
