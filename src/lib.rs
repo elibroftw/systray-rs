@@ -1,11 +1,18 @@
+// Needed for msg_send! macro
+#[cfg(any(target_os = "macos"))]
+#[macro_use]
+extern crate objc;
+
 // Systray Lib
 pub mod api;
 
 use std::{
+    cell::{RefCell, BorrowMutError},
     collections::HashMap,
     error, fmt,
     sync::mpsc::{channel, Receiver, RecvTimeoutError},
     time::Duration,
+    rc::Rc,
 };
 
 type BoxedError = Box<dyn error::Error + Send + Sync + 'static>;
@@ -46,10 +53,12 @@ impl fmt::Display for Error {
 }
 
 pub struct Application {
-    window: api::api::Window,
+    window: Rc<RefCell<Box<api::api::Window>>>,
+    #[cfg(target_os = "macos")]
+    window_raw_ptr: *mut api::api::Window,
     menu_idx: u32,
     callback: HashMap<u32, Callback>,
-    // Each platform-specific window module will set up its own thread for
+    // Each non-macOS platform-specific window module will set up its own thread for
     // dealing with the OS main loop. Use this channel for receiving events from
     // that thread.
     rx: Receiver<SystrayEvent>,
@@ -70,26 +79,55 @@ where
 }
 
 impl Application {
-    pub fn new() -> Result<Application, Error> {
+    #[cfg(not(target_os = "macos"))]
+    pub fn new() -> Result<Box<Application>, Error> {
         let (event_tx, event_rx) = channel();
         match api::api::Window::new(event_tx) {
-            Ok(w) => Ok(Application {
-                window: w,
+            Ok(w) => Ok(Box::from(Application {
+                window: Rc::from(RefCell::from(Box::from(w))),
                 menu_idx: 0,
                 callback: HashMap::new(),
                 rx: event_rx,
-            }),
+            })),
             Err(e) => Err(e),
         }
     }
 
+    #[cfg(target_os = "macos")]
+    pub fn new() -> Result<Box<Application>, Error> {
+        let (event_tx, event_rx) = channel();
+
+        match api::api::Window::new() {
+            Ok(w) => {
+                let window_raw_ptr = Box::into_raw(Box::from(w));
+                let window = unsafe { Box::from_raw(window_raw_ptr) };
+                let window_rc = Rc::from(RefCell::from(window));
+                let application_raw_ptr = Box::into_raw(Box::from(Application {
+                    window: window_rc.clone(),
+                    window_raw_ptr,
+                    menu_idx: 0,
+                    callback: HashMap::new(),
+                    rx: event_rx,
+                }));
+
+                let mut application_window = window_rc.borrow_mut();
+                application_window.set_systray_application(application_raw_ptr);
+
+                let application = unsafe { Box::from_raw(application_raw_ptr) };
+                Ok(application)
+            },
+            Err(e) => Err(e),
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
     pub fn add_menu_item<F, E>(&mut self, item_name: &str, f: F) -> Result<u32, Error>
     where
         F: FnMut(&mut Application) -> Result<(), E> + Send + Sync + 'static,
         E: error::Error + Send + Sync + 'static,
     {
         let idx = self.menu_idx;
-        if let Err(e) = self.window.add_menu_entry(idx, item_name) {
+        if let Err(e) = self.window.try_borrow_mut()?.add_menu_entry(idx, item_name) {
             return Err(e);
         }
         self.callback.insert(idx, make_callback(f));
@@ -97,17 +135,27 @@ impl Application {
         Ok(idx)
     }
 
-    pub fn add_menu_separator(&mut self) -> Result<u32, Error> {
+    #[cfg(target_os = "macos")]
+    pub fn add_menu_item<F, E>(&mut self, item_name: &str, f: F) -> Result<u32, Error>
+    where
+        F: FnMut(&mut Application) -> Result<(), E> + Send + Sync + 'static,
+        E: error::Error + Send + Sync + 'static,
+    {
         let idx = self.menu_idx;
-        if let Err(e) = self.window.add_menu_separator(idx) {
+        if let Err(e) = self.window.try_borrow_mut()?.add_menu_entry(idx, item_name, make_callback(f)) {
             return Err(e);
         }
         self.menu_idx += 1;
         Ok(idx)
     }
 
-    pub fn set_icon_from_file(&self, file: &str) -> Result<(), Error> {
-        self.window.set_icon_from_file(file)
+    pub fn add_menu_separator(&mut self) -> Result<u32, Error> {
+        let idx = self.menu_idx;
+        if let Err(e) = self.window.try_borrow_mut()?.add_menu_separator(idx) {
+            return Err(e);
+        }
+        self.menu_idx += 1;
+        Ok(idx)
     }
 
     #[cfg(target_os = "linux")]
@@ -115,37 +163,39 @@ impl Application {
         self.window.set_icon_from_name(name)
     }
 
-    pub fn set_icon_from_resource(&self, resource: &str) -> Result<(), Error> {
-        self.window.set_icon_from_resource(resource)
+    pub fn set_icon_from_file(&mut self, file: &str) -> Result<(), BorrowMutError> {
+        self.window.try_borrow_mut()?.set_icon_from_file(file)
     }
 
-    #[cfg(target_os = "windows")]
+    pub fn set_icon_from_resource(&mut self, resource: &str) -> Result<(), BorrowMutError> {
+        self.window.try_borrow_mut()?.set_icon_from_resource(resource)
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub fn set_icon_from_buffer(
-        &self,
-        buffer: &[u8],
+        &mut self,
+        buffer: &'static [u8],
         width: u32,
         height: u32,
     ) -> Result<(), Error> {
-        self.window.set_icon_from_buffer(buffer, width, height)
+        self.window.try_borrow_mut()?.set_icon_from_buffer(buffer, width, height)
     }
 
-    pub fn shutdown(&self) -> Result<(), Error> {
-        self.window.shutdown()
+    pub fn shutdown(&mut self) -> Result<(), Error> {
+        self.window.try_borrow_mut()?.shutdown()
     }
 
-    pub fn set_tooltip(&self, tooltip: &str) -> Result<(), Error> {
-        self.window.set_tooltip(tooltip)
+    pub fn set_tooltip(&mut self, tooltip: &str) -> Result<(), Error> {
+        self.window.try_borrow_mut()?.set_tooltip(tooltip)
     }
 
-    pub fn quit(&mut self) {
-        self.window.quit()
+    pub fn quit(&mut self) -> Result<(), Error> {
+        self.window.try_borrow_mut()?.quit();
+        Ok(())
     }
 
-    pub fn wait_for_message(&mut self) -> Result<(), Error> {
-        self.try_wait(Duration::new(u64::MAX, 0))
-    }
-
-    pub fn try_wait(&mut self, timeout: Duration) -> Result<(), Error> {
+    #[cfg(not(target_os = "macos"))]
+    fn wait_for_message(&mut self, timeout: Duration) -> Result<(), Error> {
         loop {
             let msg;
             match self.rx.recv_timeout(timeout) {
@@ -167,10 +217,25 @@ impl Application {
 
         Ok(())
     }
+
+    #[cfg(target_os = "macos")]
+    pub fn wait_for_message<'a>(&'a mut self) -> Result<(), Error> {
+        let mut window = unsafe { Box::from_raw(self.window_raw_ptr) };
+        window.wait_for_message();
+
+        Ok(())
+    }
+
 }
 
 impl Drop for Application {
     fn drop(&mut self) {
         self.shutdown().ok();
+    }
+}
+
+impl std::convert::From<std::cell::BorrowMutError> for Error {
+    fn from(err: std::cell::BorrowMutError) -> Self {
+        Error::OsError(format!("{}", err))
     }
 }

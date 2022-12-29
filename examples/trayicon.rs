@@ -1,6 +1,5 @@
 #![windows_subsystem = "windows"]
 
-//#[cfg(target_os = "windows")]
 fn main() -> Result<(), systray::Error> {
     let mut app;
     match systray::Application::new() {
@@ -9,7 +8,11 @@ fn main() -> Result<(), systray::Error> {
     }
     // w.set_icon_from_file(&"C:\\Users\\qdot\\code\\git-projects\\systray-rs\\resources\\rust.ico".to_string());
     // w.set_tooltip(&"Whatever".to_string());
-    app.set_icon_from_file("/usr/share/gxkb/flags/ua.png")?;
+
+    let file_path = std::path::Path::new(file!());
+    let icon_path = file_path.with_file_name("rust-logo.png");
+
+    app.set_icon_from_file(icon_path.to_str().unwrap())?;
 
     app.add_menu_item("Print a thing", |_| {
         println!("Printing a thing!");
@@ -36,8 +39,3 @@ fn main() -> Result<(), systray::Error> {
     app.wait_for_message()?;
     Ok(())
 }
-
-// #[cfg(not(target_os = "windows"))]
-// fn main() {
-//     panic!("Not implemented on this platform!");
-// }
