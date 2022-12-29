@@ -108,6 +108,11 @@ impl GtkSystrayApp {
         let mut ai = self.ai.borrow_mut();
         ai.set_icon_full(file, "icon");
     }
+
+    pub fn set_icon_from_name(&self, name: &str) {
+        let mut ai = self.ai.borrow_mut();
+        ai.set_icon(name);
+    }
 }
 
 pub struct Window {
@@ -157,6 +162,14 @@ impl Window {
         let n = file.to_owned().clone();
         run_on_gtk_thread(move |stash: &GtkSystrayApp| {
             stash.set_icon_from_file(&n);
+        });
+        Ok(())
+    }
+
+    pub fn set_icon_from_name(&self, name: &str) -> Result<(), Error> {
+        let n = name.to_owned().clone();
+        run_on_gtk_thread(move |stash: &GtkSystrayApp| {
+            stash.set_icon_from_name(&n);
         });
         Ok(())
     }
