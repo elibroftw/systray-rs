@@ -7,7 +7,7 @@ extern crate objc;
 pub mod api;
 
 use std::{
-    cell::{RefCell, BorrowMutError},
+    cell::RefCell,
     collections::HashMap,
     error, fmt,
     sync::mpsc::{channel, Receiver, RecvTimeoutError},
@@ -163,11 +163,11 @@ impl Application {
         self.window.set_icon_from_name(name)
     }
 
-    pub fn set_icon_from_file(&mut self, file: &str) -> Result<(), BorrowMutError> {
+    pub fn set_icon_from_file(&mut self, file: &str) -> Result<(), Error> {
         self.window.try_borrow_mut()?.set_icon_from_file(file)
     }
 
-    pub fn set_icon_from_resource(&mut self, resource: &str) -> Result<(), BorrowMutError> {
+    pub fn set_icon_from_resource(&mut self, resource: &str) -> Result<(), Error> {
         self.window.try_borrow_mut()?.set_icon_from_resource(resource)
     }
 
@@ -195,26 +195,33 @@ impl Application {
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn wait_for_message(&mut self, timeout: Duration) -> Result<(), Error> {
-        loop {
-            let msg;
-            match self.rx.recv_timeout(timeout) {
-                Ok(m) => msg = m,
-                // Yield and wait for the next poll
-                Err(RecvTimeoutError::Timeout) => return Err(Error::TimeoutError),
-                Err(RecvTimeoutError::Disconnected) => {
-                    self.quit();
-                    break;
-                }
-            }
-            if self.callback.contains_key(&msg.menu_index) {
-                if let Some(mut f) = self.callback.remove(&msg.menu_index) {
-                    f(self)?;
-                    self.callback.insert(msg.menu_index, f);
-                }
+    pub fn get_message(&mut self, timeout: Duration) -> Result<bool, Error> {
+        let msg;
+        match self.rx.recv_timeout(timeout) {
+            Ok(m) => msg = m,
+            Err(RecvTimeoutError::Timeout) => return Err(Error::TimeoutError),
+            Err(RecvTimeoutError::Disconnected) => {
+                self.quit();
+                return Ok(true);
             }
         }
+        if self.callback.contains_key(&msg.menu_index) {
+            if let Some(mut f) = self.callback.remove(&msg.menu_index) {
+                f(self)?;
+                self.callback.insert(msg.menu_index, f);
+            }
+        }
+        Ok(false)
+    }
 
+    #[cfg(not(target_os = "macos"))]
+    pub fn wait_for_message(&mut self, timeout: Duration) -> Result<(), Error> {
+        loop {
+            let quit = self.get_message(timeout)?;
+            if quit {
+                break;
+            }
+        }
         Ok(())
     }
 
