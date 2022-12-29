@@ -4,7 +4,8 @@ pub mod api;
 use std::{
     collections::HashMap,
     error, fmt,
-    sync::mpsc::{channel, Receiver},
+    sync::mpsc::{channel, Receiver, RecvTimeoutError},
+    time::Duration,
 };
 
 type BoxedError = Box<dyn error::Error + Send + Sync + 'static>;
@@ -15,6 +16,7 @@ pub enum Error {
     NotImplementedError,
     UnknownError,
     Error(BoxedError),
+    TimeoutError,
 }
 
 impl From<BoxedError> for Error {
@@ -38,6 +40,7 @@ impl fmt::Display for Error {
             NotImplementedError => write!(f, "Functionality is not implemented yet"),
             UnknownError => write!(f, "Unknown error occurrred"),
             Error(ref e) => write!(f, "Error: {}", e),
+            TimeoutError => write!(f, "Timeout"),
         }
     }
 }
@@ -134,11 +137,17 @@ impl Application {
     }
 
     pub fn wait_for_message(&mut self) -> Result<(), Error> {
+        self.try_wait(Duration::new(u64::MAX, 0))
+    }
+
+    pub fn try_wait(&mut self, timeout: Duration) -> Result<(), Error> {
         loop {
             let msg;
-            match self.rx.recv() {
+            match self.rx.recv_timeout(timeout) {
                 Ok(m) => msg = m,
-                Err(_) => {
+                // Yield and wait for the next poll
+                Err(RecvTimeoutError::Timeout) => return Err(Error::TimeoutError),
+                Err(RecvTimeoutError::Disconnected) => {
                     self.quit();
                     break;
                 }
